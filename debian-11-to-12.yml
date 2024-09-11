@@ -1,0 +1,98 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  LUAP: Linux Upgrade Ansible Playbook
+#  Version: 1.0.0
+#  Debian 11 → 12 Upgrade
+# ─────────────────────────────────────────────────────────────────────────────
+#  Author: Andrew Mello | License: GPLv3 | © 2024
+#  License: https://www.gnu.org/licenses/gpl-3.0.en.html
+# ─────────────────────────────────────────────────────────────────────────────
+#  DESCRIPTION:
+#  Automates the upgrade process from Debian 11 to Debian 12 across all
+#  specified hosts, ensuring efficient execution with minimal downtime.
+#
+#  ⚠️ WARNING: Irreversible actions are performed during the upgrade.
+#  Backup all important data or take a system snapshot before proceeding.
+# ─────────────────────────────────────────────────────────────────────────────
+---
+- name: Automate Debian 11 to 12 Upgrade
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure system is fully updated
+      apt:
+        update_cache: yes
+        upgrade: dist
+        autoremove: yes
+      register: upgrade_result
+      tags: update
+
+    - name: Reboot if necessary after updates
+      reboot:
+        msg: "Rebooting after dist-upgrade"
+        connect_timeout: 5
+        reboot_timeout: 600
+      when: upgrade_result.changed
+      tags: reboot
+
+    - name: Remove old unused kernels
+      shell: |
+        dpkg --list 'linux-image*' | grep '^ii' | awk '{ print $2 }' | grep -v $(uname -r) | xargs apt-get -y purge
+      tags: cleanup
+
+    - name: Clean up old initramfs images
+      shell: |
+        ls /boot/initrd.img-* | grep -v $(uname -r) | xargs rm -f
+      tags: cleanup
+
+    - name: Regenerate initramfs for the current kernel
+      command: update-initramfs -u
+      tags: initramfs
+
+    - name: Update GRUB to reflect kernel changes
+      command: update-grub
+      tags: grub-update
+
+    - name: Modify sources.list to point to Debian 12 (Bookworm)
+      lineinfile:
+        path: /etc/apt/sources.list
+        regexp: 'bullseye'
+        line: 'deb http://deb.debian.org/debian bookworm main contrib non-free'
+      tags: config
+
+    - name: Modify security updates to point to Debian 12 security updates
+      lineinfile:
+        path: /etc/apt/sources.list
+        regexp: 'bullseye/updates'
+        line: 'deb http://deb.debian.org/debian-security bookworm-security main contrib non-free'
+      tags: config
+
+    - name: Modify updates list to point to Debian 12 updates
+      lineinfile:
+        path: /etc/apt/sources.list
+        regexp: 'bullseye-updates'
+        line: 'deb http://deb.debian.org/debian bookworm-updates main contrib non-free'
+      tags: config
+
+    - name: Upgrade to Debian 12 non-interactively
+      shell: |
+        apt update && apt upgrade -y && apt full-upgrade -y
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      register: upgrade_result
+      ignore_errors: yes
+      tags: upgrade
+
+
+    - name: Upgrade to Debian 12 non-interactively | Grab a coffee—this will take a while! Seriously, expect the upgrade to take more than 10 minutes, and possibly even longer.
+      command: do-release-upgrade -f DistUpgradeViewNonInteractive
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      register: upgrade_result
+      ignore_errors: yes
+      tags: upgrade
+
+    - name: Reboot after upgrade
+      command: shutdown -r now "Thank you for using LUAP. The system will reboot now."
+      when: upgrade_result.changed
+
+
