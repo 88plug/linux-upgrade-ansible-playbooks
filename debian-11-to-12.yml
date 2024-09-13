@@ -88,11 +88,7 @@
       environment:
         DEBIAN_FRONTEND: noninteractive
       register: upgrade_result
-      ignore_errors: yes
       tags: upgrade
 
-    - name: Reboot after upgrade
-      command: shutdown -r now "Thank you for using LUAP. The system will reboot now."
-      when: upgrade_result.changed
-
-
+    - name: Thank you for using LUAP. The system will reboot now.
+      ansible.builtin.reboot:
